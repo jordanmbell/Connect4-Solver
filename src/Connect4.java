@@ -461,6 +461,23 @@ public class Connect4 {
         }
 
     }
+
+
+
+    /*
+      R   R
+      R R B
+    B B R B
+    B B B R
+    */
+    public void test() {
+        Piece[] board = new Piece[] {Piece.RED, Piece.BLUE, Piece.BLUE, Piece.RED,
+                                     Piece.BLUE, Piece.RED, Piece.RED, Piece.EMPTY,
+                                     Piece.BLUE, Piece.BLUE, Piece.RED, Piece.RED,
+                                     Piece.BLUE, Piece.BLUE, Piece.EMPTY, Piece.EMPTY};
+        Tuple<Primitive, Integer> should = memo.get(hash(board)); // 7704634250743733700
+        System.out.println(should.x);
+    }
 }
 
 
