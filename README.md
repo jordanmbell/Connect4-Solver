@@ -1,1 +1,1 @@
-# Connect4-Solver
+# Zobrist.Connect4-Zobrist.Solver
