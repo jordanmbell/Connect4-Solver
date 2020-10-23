@@ -463,6 +463,24 @@ public class Connect4 {
             nextP = nextP.opposite();
             System.out.println("-------------------------------------------------");
         }
+
+    }
+
+
+
+    /*
+      R   R
+      R R B
+    B B R B
+    B B B R
+    */
+    public void test() {
+        Piece[] board = new Piece[] {Piece.EMPTY, Piece.EMPTY, Piece.EMPTY,
+                                     Piece.BLUE, Piece.RED, Piece.BLUE,
+                                     Piece.RED, Piece.BLUE, Piece.EMPTY, };
+        Tuple<Primitive, Integer> should = isPrimitive(board, Piece.BLUE);
+        System.out.println(should.x);
+        System.out.println(should.y);
     }
 }
 
