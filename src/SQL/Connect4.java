@@ -247,20 +247,21 @@ public class Connect4 {
             Statement stmt = conn.createStatement();
             switch(p) {
                 case NOT_PRIMITIVE:
-                    stmt.execute(String.format("INSERT INTO memo(hash, value) VALUES(%d, %s, %d)", hash, "00", remote));
+                    stmt.execute(String.format("INSERT INTO memo(hash, value, remoteness) VALUES(%d, b'00', %d)", hash, remote));
                     break;
                 case WIN:
-                    stmt.execute(String.format("INSERT INTO memo(hash, value) VALUES(%d, %s, %d)", hash, "01", remote));
+                    stmt.execute(String.format("INSERT INTO memo(hash, value, remoteness) VALUES(%d, b'01', %d)", hash, remote));
                     break;
                 case LOSS:
-                    stmt.execute(String.format("INSERT INTO memo(hash, value) VALUES(%d, %s, %d)", hash, "10", remote));
+                    stmt.execute(String.format("INSERT INTO memo(hash, value, remoteness) VALUES(%d, b'10', %d)", hash, remote));
                     break;
                 case TIE:
-                    stmt.execute(String.format("INSERT INTO memo(hash, value) VALUES(%d, %s, %d)", hash, "11", remote));
+                    stmt.execute(String.format("INSERT INTO memo(hash, value, remoteness) VALUES(%d, b'11', %d)", hash, remote));
                     break;
             }
         } catch (SQLException e) {
             e.printStackTrace();
+            throw new IllegalStateException("uh ho");
         }
 
     }
@@ -268,25 +269,28 @@ public class Connect4 {
     private Tuple<Primitive, Integer> getValue(long hash) {
         try{
             Statement stmt = conn.createStatement();
-            ResultSet rs =  stmt.executeQuery(String.format("select 1 from memo where hash=%d)", hash));
+            String query = String.format("select value, remoteness from memo where hash=%d LIMIT 1", hash);
+            ResultSet rs =  stmt.executeQuery(query);
             Primitive prim = null;
             short remote = -1;
-            if (rs.wasNull()) {
+            if (!rs.next()) {
                 prim = Primitive.NOT_SOLVED;
             } else {
-                switch (rs.getBinaryStream(1).toString()) {
-                    case "00":
+                switch (rs.getInt(1)) {
+                    case 0:
                         prim =  Primitive.NOT_PRIMITIVE;
                         break;
-                    case "01":
+                    case 1:
                         prim =  Primitive.WIN;
                         break;
-                    case "10":
+                    case 10:
                         prim =  Primitive.LOSS;
                         break;
-                    case "11":
+                    case 11:
                         prim =  Primitive.TIE;
                         break;
+                    default:
+                        throw new IllegalStateException("didnt match");
 
                 }
                 remote = rs.getShort(2);

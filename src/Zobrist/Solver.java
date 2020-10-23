@@ -4,7 +4,7 @@ public class Solver {
 
 
     public static void main (String[] args) {
-        Connect4 g = new Connect4(3, 3, 3);
+        Connect4 g = new Connect4(4, 4, 4);
         long start = System.currentTimeMillis();
         g.solve();
         System.out.println(System.currentTimeMillis() - start);

@@ -12,7 +12,8 @@ public class SQLDatabaseConnection {
         String connectionUrl =
                 "jdbc:postgresql://localhost:5432/connect4";
 
-        try (Connection connection = DriverManager.getConnection(connectionUrl, "postgres", "password")) {
+        try {
+            Connection connection = DriverManager.getConnection(connectionUrl, "postgres", "password");
             System.out.println("Connected to the PostgreSQL server successfully.");
             // Code here.
             return connection;
