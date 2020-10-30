@@ -1,7 +1,9 @@
-package Zobrist;
+package Tight;
 
 import java.io.*;
 import java.util.*;
+import org.apache.commons.math3.util.CombinatoricsUtils;
+
 public class Connect4 {
 
     public static class Tuple<X, Y> implements Serializable{
@@ -32,31 +34,150 @@ public class Connect4 {
             }
         }
     }
+
     int width;
     int height;
     int win;
-    long[][] zobristValues;
-    Piece[] startingPosition;
-    Random rand;
-    long seed;
-    long startingHash;
-    HashMap<Long, Tuple<Primitive, Integer>> memo;
+    private final Piece[] startingPosition;
+    int[] offsets;
+    private final HashMap<int[], Integer> savedBias;
+    HashMap<Integer,Byte> memo = new HashMap<>();
+    Random rand = new Random();
 
     /** Pieces stored in column major order, starting from bottom right*/
     public Connect4(int w, int h, int wi) {
         width = w;
         height = h;
         win = wi;
-        startingPosition = new Piece[width*height];
+        startingPosition = new Piece[w*h];
         Arrays.fill(startingPosition, Piece.EMPTY);
-        seed = System.currentTimeMillis();
-        rand = new Random(seed);
-        initZobrist();
-        memo = new HashMap<>();
+        savedBias = new HashMap<>();
+        setOffsets();
     }
 
+    private void setOffsets() {
+        offsets = new int[width*height +1];
+        offsets[0] = 1;
+        for (int i = 1; i < offsets.length; i++) {
+            if (i % 2 == 0) {
+                offsets[i] = offsets[i-1] +  rearrange(i/2, i/2, startingPosition.length);
+            } else {
+                offsets[i] = offsets[i-1] + rearrange((i/2) + 1, i/2, startingPosition.length);
+            }
+        }
+        for (int i = offsets.length - 1; i > 0; i--) {
+            offsets[i] = offsets[i - 1];
+        }
+        offsets[0] = 0;
+    }
 
-    public Piece[] doMove(Piece[] position, int move, Piece p) {
+    private int rearrange(int x, int o, int s) {
+        if (s == 0) {
+            return 0;
+        }
+        int[] temp = new int[]{x,o,s};
+        if (savedBias.containsKey(temp)) {
+            return savedBias.get(temp);
+        }
+        long sFact = CombinatoricsUtils.factorial(s);
+        long oFact = CombinatoricsUtils.factorial(o);
+        long xFact = CombinatoricsUtils.factorial(x);
+        long diffFact = CombinatoricsUtils.factorial(s - x - o);
+        double ret = (double) sFact / (oFact * xFact * diffFact);
+        if (ret % 1 == 0) {
+            int temper = (int) ret;
+            savedBias.put(temp, temper);
+            return temper;
+        }
+        throw new IllegalStateException("ret should be an int, not " + ret);
+    }
+
+    private Tuple<Primitive, Integer> getValue(int location) {
+        if (!memo.containsKey(location)) {
+            return null;
+        }
+        byte b = memo.get(location);
+        int val = Byte.toUnsignedInt(b);
+        int remoteness = (val << 26) >>> 26;
+        Primitive p;
+        switch((val) >>> 6) {
+            case 0:
+                p = Primitive.NOT_PRIMITIVE;
+                break;
+            case 1:
+                p = Primitive.LOSS;
+                break;
+            case 2:
+                p = Primitive.WIN;
+                break;
+            case 3:
+                p = Primitive.TIE;
+                break;
+            default:
+                throw new IllegalStateException("two bits should only have those options");
+        }
+        return new Tuple<>(p, remoteness);
+    }
+
+    private byte byteValue(Tuple<Primitive, Integer> p) {
+        Integer temp;
+        switch (p.x) {
+            case NOT_PRIMITIVE:
+                temp = 0;
+                break;
+            case LOSS:
+                temp = 1;
+                break;
+            case WIN:
+                temp = 2;
+                break;
+            case TIE:
+                temp = 3;
+                break;
+            default:
+                throw new IllegalStateException("shhouldnt happpen");
+        }
+        temp = temp << 6;
+        temp += p.y;
+        return temp.byteValue();
+    }
+
+    private int calculateLocation(Piece[] position, int numPieces) {
+        int location = offsets[numPieces];
+        int numX = (numPieces / 2) + (numPieces % 2);
+        int numO = numPieces / 2;
+        int numBlanks = position.length - numPieces;
+        int s = position.length;
+        for (int i = position.length - 1; i >= 0; i--) {
+            if (s == numX || s == numO || s == numBlanks) {
+                break;
+            }
+            switch (position[i]) {
+                case BLUE:
+                    if (numO > 0) {
+                        location += rearrange(numX, numO - 1, s - 1);
+                    }
+                    if (numBlanks > 0) {
+                        location += rearrange(numX, numO, s - 1);
+                    }
+                    numX -= 1;
+                    break;
+                case RED:
+                    if (numBlanks > 0) {
+                        location += rearrange(numX, numO, s - 1);
+                    }
+                    numO -= 1;
+                    break;
+                case EMPTY:
+                    numBlanks -= 1;
+                    break;
+            }
+            s -= 1;
+        }
+        return location;
+    }
+
+    private Piece[] doMove(Piece[] position, int move, Piece p) {
         Piece[] newPosition = new Piece[getSize()];
         System.arraycopy(position, 0, newPosition, 0, position.length);
         newPosition[move] = p;
@@ -64,7 +185,7 @@ public class Connect4 {
     }
 
 
-    public List<Integer> generateMoves(Piece[] position) {
+    private List<Integer> generateMoves(Piece[] position) {
         List<Integer> ret = new ArrayList<>();
         for (int i = 0; i < getSize(); i++) {
             if (position[i] == Piece.EMPTY) {
@@ -76,7 +197,7 @@ public class Connect4 {
         return ret;
     }
 
-    public Tuple<Primitive, Integer> isPrimitive(Piece[] position, Piece placed) {
+    private Tuple<Primitive, Integer> isPrimitive(Piece[] position, Piece placed) {
         boolean full = true;
         for (int column = 0; column < width; column++) {
             int row = height - 1;
@@ -115,23 +236,11 @@ public class Connect4 {
                     }
                 }
                 for (int c = column + 1; c < width; c++) {
-                    try {
-                        if (position[row + c*height] != placed) {
-                            break;
-                        } else {
-                            in_a_row++;
-                        }
-                    } catch (IndexOutOfBoundsException e) {
-                        System.out.println(row);
-                        System.out.println(column);
-                        System.out.println(c);
-                        throw e;
+                    if (position[row + c*width] != placed) {
+                        break;
+                    } else {
+                        in_a_row++;
                     }
-//                    if (position[row + c*width] != placed) {
-//                        break;
-//                    } else {
-//                        in_a_row++;
-//                    }
                 }
                 if (in_a_row >= win) {
                     return new Tuple<>(Primitive.LOSS, 0);
@@ -192,82 +301,41 @@ public class Connect4 {
     }
 
 
-    public long hash(Piece[] position) {
-        long hash = 0;
-        for (int i = 0; i < position.length; i++) {
-            switch (position[i]) {
-                case EMPTY:
-                    hash ^= zobristValues[i][0];
-                    break;
-                case RED:
-                    hash ^= zobristValues[i][1];
-                    break;
-                case BLUE:
-                    hash ^= zobristValues[i][2];
-                    break;
-            }
-        }
-        return Math.min(hash, rev_hash(position));
-    }
 
-    public long rev_hash(Piece[] position) {
-        long hash = 0;
-        for (int i = 0; i < position.length; i++) {
-            switch (position[symMove(i)]) {
-                case EMPTY:
-                    hash ^= zobristValues[i][0];
-                    break;
-                case RED:
-                    hash ^= zobristValues[i][1];
-                    break;
-                case BLUE:
-                    hash ^= zobristValues[i][2];
-                    break;
-            }
-        }
-        return hash;
-    }
 
-    private void initZobrist() {
-        zobristValues = new long[width*height][];
-        for (int j = 0; j < height*width; j++) {
-            zobristValues[j] = new long[3];
-            for (int k = 0; k < 3; k++) {
-                zobristValues[j][k] = rand.nextLong();
-            }
-        }
-    }
 
-    private long addHash(long prevHash, Piece p, int position) {
-        switch (p) {
-            case RED:
-                return prevHash ^ zobristValues[position][1] ^ zobristValues[position][0];
-            case BLUE:
-                return prevHash ^ zobristValues[position][2] ^ zobristValues[position][0];
-        }
-        throw new IllegalStateException("This should never happen");
-    }
 
     public void solve() {
-        solve(getStartingPosition(), hash(getStartingPosition()), hash(getStartingPosition()), Piece.BLUE);
+        solve(getStartingPosition(), 0, Piece.BLUE);
     }
 
-    private Tuple<Primitive, Integer> solve(Piece[] position, long hash, long symHash, Piece next) {
-        if (memo.containsKey(Math.min(hash, symHash))) {
-            return memo.get(Math.min(hash, symHash));
+    private Tuple<Primitive, Integer> solve(Piece[] position, int numPieces, Piece next) {
+        if (Arrays.equals(position, new Piece[]{Piece.RED, Piece.BLUE, Piece.BLUE, Piece.RED})) {
+            System.out.println("sdf");
+        }
+        if (Arrays.equals(position, new Piece[]{Piece.BLUE, Piece.EMPTY, Piece.RED, Piece.BLUE})) {
+            System.out.println("sdf");
+        }
+        int location = calculateLocation(position, numPieces);
+        if (location == 37) {
+            System.out.println("");
+        }
+        Tuple<Primitive, Integer> solvedVal = getValue(location);
+        if (solvedVal != null) {
+            return solvedVal;
         }
 
         Piece placed = next.opposite();
         Tuple<Primitive, Integer> p = isPrimitive(position, placed);
         if (p.x != Primitive.NOT_PRIMITIVE) {
-            memo.put(Math.min(hash, symHash), p);
+            memo.put(location, byteValue(p));
             return p;
         }
         List<Integer> moves = generateMoves(position);
         ArrayList<Tuple<Primitive, Integer>> nextPositionValues = new ArrayList<>(moves.size());
         for (int move : moves) {
             Piece[] newPosition = doMove(position, move, next);
-            nextPositionValues.add(solve(newPosition, addHash(hash, next, move), addHash(symHash, next, symMove(move)), placed));
+            nextPositionValues.add(solve(newPosition, numPieces + 1, placed));
         }
         int lossRemote = Integer.MAX_VALUE;
         int tieRemote = -1;
@@ -283,15 +351,15 @@ public class Connect4 {
         }
         if (lossRemote != Integer.MAX_VALUE) {
             Tuple<Primitive, Integer> temp = new Tuple<>(Primitive.WIN, lossRemote + 1);
-            memo.put(Math.min(hash, symHash), temp);
+            memo.put(location, byteValue(temp));
             return temp;
         } else if (tieRemote != -1) {
             Tuple<Primitive, Integer> temp = new Tuple<>(Primitive.TIE, tieRemote + 1);
-            memo.put(Math.min(hash, symHash), temp);
+            memo.put(location, byteValue(temp));
             return temp;
         } else {
             Tuple<Primitive, Integer> temp = new Tuple<>(Primitive.LOSS, winRemote + 1);
-            memo.put(Math.min(hash, symHash), temp);
+            memo.put(location, byteValue(temp));
             return temp;
         }
     }
@@ -305,33 +373,34 @@ public class Connect4 {
     }
 
     public void printInfo() {
-        System.out.println(memo.get(hash(startingPosition)).x);
+        int loc = calculateLocation(getStartingPosition(), 0);
+        System.out.println(getValue(loc).x);
         System.out.println(memo.size());
     }
 
-    public void serialize(String filename) {
-        try {
-            FileOutputStream fos = new FileOutputStream(filename);
-            ObjectOutputStream oos = new ObjectOutputStream(fos);
-            oos.writeLong(seed);
-            oos.writeObject(memo);
-        } catch (IOException ioe) {
-            ioe.printStackTrace();
-        }
-    }
-
-    public void deserialize(String filename) {
-        try {
-            FileInputStream fis = new FileInputStream(filename);
-            ObjectInputStream ois = new ObjectInputStream(fis);
-            seed = ois.readLong();
-            Object temp = ois.readObject();
-            initZobrist();
-            memo = (HashMap<Long, Tuple<Primitive, Integer>>) temp;
-        } catch (IOException | ClassNotFoundException e) {
-            e.printStackTrace();
-        }
-    }
+//    public void serialize(String filename) {
+//        try {
+//            FileOutputStream fos = new FileOutputStream(filename);
+//            ObjectOutputStream oos = new ObjectOutputStream(fos);
+//            oos.writeLong(seed);
+//            oos.writeObject(memo);
+//        } catch (IOException ioe) {
+//            ioe.printStackTrace();
+//        }
+//    }
+//
+//    public void deserialize(String filename) {
+//        try {
+//            FileInputStream fis = new FileInputStream(filename);
+//            ObjectInputStream ois = new ObjectInputStream(fis);
+//            seed = ois.readLong();
+//            Object temp = ois.readObject();
+//            initZobrist();
+//            memo = (HashMap<Long, Tuple<Primitive, Integer>>) temp;
+//        } catch (IOException | ClassNotFoundException e) {
+//            e.printStackTrace();
+//        }
+//    }
 
     public void printBoard(Piece[] board) {
         StringBuilder stb = new StringBuilder();
@@ -360,12 +429,13 @@ public class Connect4 {
 
 
     public void play() {
-        if (!memo.containsKey(hash(getStartingPosition()))) {
+        int loc = calculateLocation(getStartingPosition(), 0);
+        if (!memo.containsKey((loc))) {
             solve();
         }
         Scanner input = new Scanner(System.in);
         Piece[] board = getStartingPosition();
-
+        int numPieces = 0;
         Piece nextP = Piece.BLUE;
         while (true) {
             printBoard(board);
@@ -386,10 +456,11 @@ public class Connect4 {
                 }
                 break;
             }
-            Tuple<Primitive, Integer> should = memo.get(hash(board));
+            loc = calculateLocation(board, numPieces);
+            Tuple<Primitive, Integer> should = getValue(loc);
             System.out.println(should.x);
             if (should.x == Primitive.TIE) {
-                System.out.println("Zobrist.Game should Tie");
+                System.out.println("Game should Tie");
             } else if (should.x == Primitive.WIN) {
                 switch(nextP) {
                     case BLUE:
@@ -411,13 +482,15 @@ public class Connect4 {
             }
             System.out.println("in " + should.y);
             int next;
+            numPieces ++;
             if (nextP == Piece.RED) {
                 List<Integer> moves = generateMoves(board);
                 Collections.shuffle(moves);
                 ArrayList<Tuple<Primitive, Integer>> nextPositionValues = new ArrayList<>(moves.size());
                 for (int move : moves) {
                     Piece[] newPosition = doMove(board, move, nextP);
-                    nextPositionValues.add(memo.get(hash(newPosition)));
+                    loc = calculateLocation(newPosition, numPieces);
+                    nextPositionValues.add(getValue(loc));
 
                 }
                 int lossRemote = Integer.MAX_VALUE;

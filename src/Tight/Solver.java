@@ -1,4 +1,4 @@
-package Zobrist;
+package Tight;
 
 public class Solver {
 
