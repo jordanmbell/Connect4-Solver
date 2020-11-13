@@ -1,4 +1,4 @@
-package Tight;
+package Helpers;
 
 public enum Primitive {
     NOT_PRIMITIVE,

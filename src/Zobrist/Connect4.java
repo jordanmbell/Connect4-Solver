@@ -191,6 +191,120 @@ public class Connect4 {
         }
     }
 
+    // The same as isPrimitive(position, placed) except we only check the one location we need to
+    public Tuple<Primitive, Integer> isPrimitive(Piece[] position, Piece placed, int location) {
+        if (location == -1) {
+            return new Tuple<>(Primitive.NOT_PRIMITIVE, 0);
+        }
+        boolean full = true;
+        for (int column = 0; column < width; column++) {
+            int row = height - 1;
+            Piece atP = position[row + column * height];
+            if (atP == Piece.EMPTY) {
+                full = false;
+                break;
+            }
+        }
+        int row = location % height;
+        int column = location / height;
+        // Vertical wins
+        if (row - win + 1 >= 0) {
+            for (int r = row - 1; r >= row - win + 1; r--) {
+                if (position[r + column*height] != placed) {
+                    break;
+                }
+                if (r == row - win + 1) {
+                    return new Tuple<>(Primitive.LOSS, 0);
+                }
+            }
+        }
+
+        //Horizontal wins
+        if (win <= width) {
+            int in_a_row = 1;
+            for (int c = column - 1; c >=0; c--) {
+                if (position[row + c*height] != placed) {
+                    break;
+                } else {
+                    in_a_row++;
+                }
+            }
+            for (int c = column + 1; c < width; c++) {
+                try {
+                    if (position[row + c*height] != placed) {
+                        break;
+                    } else {
+                        in_a_row++;
+                    }
+                } catch (IndexOutOfBoundsException e) {
+                    System.out.println(row);
+                    System.out.println(column);
+                    System.out.println(c);
+                    throw e;
+                }
+//                    if (position[row + c*width] != placed) {
+//                        break;
+//                    } else {
+//                        in_a_row++;
+//                    }
+            }
+            if (in_a_row >= win) {
+                return new Tuple<>(Primitive.LOSS, 0);
+            }
+        }
+
+        // Diag Left High
+        if (win <= width && win <= height) {
+            int in_a_diag = 1;
+            int found = row + column*height;
+            for (int f = found + 1 + height; f < width*height && f % height != 0; f += 1 + height) {
+                if (position[f] != placed) {
+                    break;
+                } else {
+                    in_a_diag++;
+                }
+            }
+            for (int f = found - 1 - height; f >= 0 && (f + 1) % height != 0; f -= 1 + height) {
+                if (position[f] != placed) {
+                    break;
+                } else {
+                    in_a_diag++;
+                }
+            }
+            if (in_a_diag >= win) {
+                return new Tuple<>(Primitive.LOSS, 0);
+            }
+        }
+
+        //Diag Right High
+        if (win <= width && win <= height) {
+            int in_a_diag = 1;
+            int found = row + column*height;
+            for (int f = found + 1 - height; f >= 0 && f % height != 0; f += 1 - height) {
+                if (position[f] != placed) {
+                    break;
+                } else {
+                    in_a_diag++;
+                }
+            }
+            for (int f = found - 1 + height; f < width*height && (f + 1) % height != 0; f -= 1 - height) {
+                if (position[f] != placed) {
+                    break;
+                } else {
+                    in_a_diag++;
+                }
+            }
+            if (in_a_diag >= win) {
+                return new Tuple<>(Primitive.LOSS, 0);
+            }
+
+        }
+        if (full) {
+            return new Tuple<>(Primitive.TIE, 0);
+        } else {
+            return new Tuple<>(Primitive.NOT_PRIMITIVE, 0);
+        }
+    }
 
     public long hash(Piece[] position) {
         long hash = 0;
@@ -249,25 +363,27 @@ public class Connect4 {
     }
 
     public void solve() {
-        solve(getStartingPosition(), hash(getStartingPosition()), hash(getStartingPosition()), Piece.BLUE);
+        solve(getStartingPosition(), hash(getStartingPosition()), hash(getStartingPosition()), Piece.BLUE, -1);
     }
 
-    private Tuple<Primitive, Integer> solve(Piece[] position, long hash, long symHash, Piece next) {
-        if (memo.containsKey(Math.min(hash, symHash))) {
-            return memo.get(Math.min(hash, symHash));
+    private Tuple<Primitive, Integer> solve(Piece[] position, long hash, long symHash, Piece next, int m) {
+        long min = Math.min(hash, symHash);
+        //long min = hash; // Use to stop removing symmetries
+        if (memo.containsKey(min)) {
+            return memo.get(min);
         }
 
         Piece placed = next.opposite();
-        Tuple<Primitive, Integer> p = isPrimitive(position, placed);
+        Tuple<Primitive, Integer> p = isPrimitive(position, placed, m);
         if (p.x != Primitive.NOT_PRIMITIVE) {
-            memo.put(Math.min(hash, symHash), p);
+            memo.put(min, p);
             return p;
         }
         List<Integer> moves = generateMoves(position);
         ArrayList<Tuple<Primitive, Integer>> nextPositionValues = new ArrayList<>(moves.size());
         for (int move : moves) {
             Piece[] newPosition = doMove(position, move, next);
-            nextPositionValues.add(solve(newPosition, addHash(hash, next, move), addHash(symHash, next, symMove(move)), placed));
+            nextPositionValues.add(solve(newPosition, addHash(hash, next, move), addHash(symHash, next, symMove(move)), placed, move));
         }
         int lossRemote = Integer.MAX_VALUE;
         int tieRemote = -1;
@@ -283,15 +399,15 @@ public class Connect4 {
         }
         if (lossRemote != Integer.MAX_VALUE) {
             Tuple<Primitive, Integer> temp = new Tuple<>(Primitive.WIN, lossRemote + 1);
-            memo.put(Math.min(hash, symHash), temp);
+            memo.put(min, temp);
             return temp;
         } else if (tieRemote != -1) {
             Tuple<Primitive, Integer> temp = new Tuple<>(Primitive.TIE, tieRemote + 1);
-            memo.put(Math.min(hash, symHash), temp);
+            memo.put(min, temp);
             return temp;
         } else {
             Tuple<Primitive, Integer> temp = new Tuple<>(Primitive.LOSS, winRemote + 1);
-            memo.put(Math.min(hash, symHash), temp);
+            memo.put(min, temp);
             return temp;
         }
     }
@@ -305,8 +421,27 @@ public class Connect4 {
     }
 
     public void printInfo() {
-        System.out.println(memo.get(hash(startingPosition)).x);
-        System.out.println(memo.size());
+        System.out.println("value of game is: " + memo.get(hash(startingPosition)).x);
+        System.out.println("size of game is: " + memo.size());
+        int ties = 0;
+        int wins = 0;
+        int losses = 0;
+        for(Tuple<Primitive, Integer> tuple : memo.values()) {
+            switch (tuple.x) {
+                case TIE:
+                    ties ++;
+                    break;
+                case WIN:
+                    wins++;
+                    break;
+                case LOSS:
+                    losses++;
+                    break;
+            }
+        }
+        System.out.println(losses + " losses");
+        System.out.println(wins + " wins");
+        System.out.println(ties + " ties");
     }
 
     public void serialize(String filename) {
@@ -372,7 +507,7 @@ public class Connect4 {
             Tuple<Primitive, Integer> prim = isPrimitive(board, nextP.opposite());
             if (prim.x != Primitive.NOT_PRIMITIVE) {
                 if (prim.x == Primitive.TIE) {
-                    System.out.println("Tie Zobrist.Game");
+                    System.out.println("Tie Game");
 
                 } else {
                     switch(nextP) {
@@ -389,7 +524,7 @@ public class Connect4 {
             Tuple<Primitive, Integer> should = memo.get(hash(board));
             System.out.println(should.x);
             if (should.x == Primitive.TIE) {
-                System.out.println("Zobrist.Game should Tie");
+                System.out.println("Game should Tie");
             } else if (should.x == Primitive.WIN) {
                 switch(nextP) {
                     case BLUE:
@@ -411,7 +546,7 @@ public class Connect4 {
             }
             System.out.println("in " + should.y);
             int next;
-            if (nextP == Piece.RED) {
+            if (nextP == Piece.EMPTY) {
                 List<Integer> moves = generateMoves(board);
                 Collections.shuffle(moves);
                 ArrayList<Tuple<Primitive, Integer>> nextPositionValues = new ArrayList<>(moves.size());

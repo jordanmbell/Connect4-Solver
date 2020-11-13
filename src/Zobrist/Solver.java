@@ -4,10 +4,10 @@ public class Solver {
 
 
     public static void main (String[] args) {
-        Connect4 g = new Connect4(4, 5, 4);
+        Connect4 g = new Connect4(5, 5, 4);
         long start = System.currentTimeMillis();
         g.solve();
-        System.out.println(System.currentTimeMillis() - start);
+        System.out.println("Time taken : " + (((double) System.currentTimeMillis() - start) / 1000));
         g.printInfo();
         g.play();
     }
