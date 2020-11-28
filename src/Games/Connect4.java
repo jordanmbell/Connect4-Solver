@@ -146,7 +146,7 @@ public class Connect4 {
     // The same as isPrimitive(position, placed) except we only check the one location we need to
     public Tuple<Primitive, Integer> isPrimitive(Piece[] position, Piece placed, int location) {
         if (location == -1) {
-            return new Tuple<>(Primitive.NOT_PRIMITIVE, 0);
+            return isPrimitive(position, placed);
         }
         boolean full = true;
         for (int column = 0; column < width; column++) {

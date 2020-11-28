@@ -1,10 +1,12 @@
-package Tight;
+package Tier;
 
 import Games.Connect4;
 import Helpers.Piece;
 import Helpers.Primitive;
 import Helpers.Tuple;
+import Tight.ParallelRunner;
 import org.apache.commons.math3.util.CombinatoricsUtils;
+
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
@@ -13,11 +15,11 @@ import java.util.*;
 
 import static java.nio.file.StandardOpenOption.*;
 
-public class SolverSeekable extends Thread {
+public class SolverTier extends Thread {
 
-    ParallelRunner.SharedVars sharedVars;
+    TierRunner.SharedVars sharedVars;
 
-    public SolverSeekable(int w, int h, int wi, Piece[] starter, ParallelRunner.SharedVars sharedVars) {
+    public SolverTier(int w, int h, int wi, Piece[] starter, TierRunner.SharedVars sharedVars) {
         this(w, h, wi, sharedVars);
         startingPosition = starter;
         int numBlue = 0;
@@ -57,7 +59,7 @@ public class SolverSeekable extends Thread {
     Map<Long, Byte> cache = new HashMap<>();
     long[] logs = new long[8]; // setOffsets, rearrange, calculateLocation, isPrim, generateMoves, doMoves, Fileio, numSolved
     /** Pieces stored in column major order, starting from bottom right*/
-    public SolverSeekable(int w, int h, int wi, ParallelRunner.SharedVars shared) {
+    public SolverTier(int w, int h, int wi, TierRunner.SharedVars shared) {
         width = w;
         height = h;
         win = wi;
@@ -74,7 +76,7 @@ public class SolverSeekable extends Thread {
         }
         game = new Connect4(width, height, win);
         setOffsets();
-        fileName = "connect4_by_" + width + "_by_" + height + "_win_" + win + "_sparse";
+        fileName = "connect4_by_" + width + "_by_" + height + "_win_" + win + "_tier_" + getId();
         Path path = Path.of(fileName);
 
         try {
@@ -246,6 +248,60 @@ public class SolverSeekable extends Thread {
         return location;
     }
 
+    public void bottomUp(List<List<Piece[]>> tiers) {
+        for (int tier = tiers.size() - 1; tier >=0; tier ++) {
+            if (tier == tiers.size() - 1) {
+
+            }
+        }
+    }
+
+    public List<List<Piece[]>> exploreTiers() {
+        List<Piece[]> lastTier = new ArrayList<>();
+        lastTier.add(startingPosition);
+        Piece nextPiece = Piece.BLUE;
+        int sum = 0;
+        List<List<Piece[]>> ret = new ArrayList<>();
+        ret.add(lastTier);
+        for (int tier = 1; tier <= width*height; tier++) {
+            System.out.println(tier + " " + sum);
+            int size = lastTier.size() / 8;
+            List<DownwardThread> threads = new ArrayList<>();
+            // Make threads
+            for (int i = 0; i < 8; i++) {
+                DownwardThread newThread = new DownwardThread(width, height, win, nextPiece, size*i, size * (i + 1), lastTier);
+                if (i == 7) {
+                    newThread.end = lastTier.size();
+                }
+                threads.add(newThread);
+            }
+            // Execute threads
+            for (Thread thread : threads) {
+                thread.start();
+            }
+            // Wait for threads
+            for (Thread thread : threads) {
+                try {
+                    thread.join();
+                } catch (InterruptedException ignored) {}
+            }
+            HashSet<List<Piece>> nextTierHash = new HashSet<>();
+            for (DownwardThread thread : threads) {
+                nextTierHash.addAll(thread.nextTier);
+            }
+            List<Piece[]> nextTier = new ArrayList<>();
+            for (List<Piece> list : nextTierHash) {
+                nextTier.add(list.toArray(new Piece[0]));
+            }
+            nextPiece = nextPiece.opposite();
+            lastTier = nextTier;
+            ret.add(lastTier);
+            sum += lastTier.size();
+        }
+        System.out.println(sum);
+        return ret;
+    }
+
     private long calculateLocation(Piece[] position, int numPieces) {
         long temp = System.currentTimeMillis();
         long location = offsets[numPieces];
@@ -384,6 +440,12 @@ public class SolverSeekable extends Thread {
 
     public int getSize() {
         return width*height;
+    }
+
+    public void printAll(List<Piece[]> boards) {
+        for (Piece[] board : boards) {
+            printBoard(board);
+        }
     }
 
     public void printBoard(Piece[] board) {
@@ -567,6 +629,10 @@ public class SolverSeekable extends Thread {
             ret.add(game.doMove(startingPosition, lst.get(i), Piece.BLUE));
         }
         return ret;
+    }
+
+    public Piece[] getStartingPosition() {
+        return startingPosition;
     }
 }
 
