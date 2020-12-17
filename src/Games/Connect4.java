@@ -4,19 +4,26 @@ import Helpers.Piece;
 import Helpers.Primitive;
 import Helpers.Tuple;
 
+import java.io.Serializable;
 import java.util.*;
 
-public class Connect4 {
+public class Connect4 implements Serializable {
     int width;
     int height;
     int win;
-
+    Piece[] gameStartingPosition;
 
     /** Pieces stored in column major order, starting from bottom right*/
     public Connect4(int w, int h, int wi) {
         width = w;
         height = h;
         win = wi;
+        gameStartingPosition = new Piece[w*h];
+        Arrays.fill(gameStartingPosition, Piece.EMPTY);
+    }
+
+    public Piece[] getStartingPositions() {
+        return gameStartingPosition;
     }
 
 

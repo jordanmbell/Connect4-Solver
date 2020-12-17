@@ -2,31 +2,27 @@ package Tier;
 
 import Games.Connect4;
 import Helpers.Piece;
-
 import org.apache.commons.math3.util.CombinatoricsUtils;
-import org.apache.spark.api.java.function.FlatMapFunction;
-import org.apache.spark.api.java.function.PairFlatMapFunction;
-import scala.Tuple2;
+import org.apache.spark.api.java.function.Function;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
-
-public class DownwardThread implements PairFlatMapFunction<Tuple2<Long, Piece[]>, Long, Piece[]> {
-
+public class ChildrenFuncThread implements Function<Piece[], List<Long>> {
 
     int w;
     int h;
     int win;
-    Piece nextP;
-    int tier;
     Connect4 game;
+    Piece nextP;
+    long[][][] savedRearrange;
     long[] offsets;
-    private long[][][] savedRearrange;
-
-    public DownwardThread(int w, int h, int win, Piece nextP, int tier) {
+    int tier;
+    public ChildrenFuncThread(int w, int h, int win, Piece nextP, int tier) {
         this.w = w;
         this.h = h;
         this.win = win;
+        this.game = new Connect4(w,h,win);
         this.nextP = nextP;
         this.tier = tier;
         savedRearrange = new long[2 + w*h / 2][2 + w*h/2][w*h + 1];
@@ -42,16 +38,14 @@ public class DownwardThread implements PairFlatMapFunction<Tuple2<Long, Piece[]>
     }
 
     @Override
-    public Iterator<Tuple2<Long, Piece[]>> call(Tuple2<Long, Piece[]> longTuple2){
-        List<Tuple2<Long, Piece[]>> nextTier = new ArrayList<>();
-        List<Integer> moves = game.generateMoves(longTuple2._2);
-        for (int move: moves) {
-            Piece[] newPosition = game.doMove(longTuple2._2, move, nextP);
-            nextTier.add(new Tuple2<>(calculateLocation(newPosition, tier),newPosition));
+    public List<Long> call(Piece[] pieces) {
+        List<Long> ret = new ArrayList<>();
+        List<Integer> moves = game.generateMoves(pieces);
+        for (Integer move: moves) {
+            ret.add(calculateLocation(game.doMove(pieces, move, nextP), tier));
         }
-        return nextTier.iterator();
+        return ret;
     }
-
 
     private void setOffsets() {
         Piece[] startingPosition = new Piece[w*h];
@@ -166,7 +160,4 @@ public class DownwardThread implements PairFlatMapFunction<Tuple2<Long, Piece[]>
         }
         return Math.min(location, calculateLocationSym(position, numPieces));
     }
-
-
-
 }

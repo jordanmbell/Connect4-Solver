@@ -2,33 +2,33 @@ package Tier;
 
 import Games.Connect4;
 import Helpers.Piece;
-
+import Helpers.Primitive;
+import Helpers.Tuple;
 import org.apache.commons.math3.util.CombinatoricsUtils;
-import org.apache.spark.api.java.function.FlatMapFunction;
-import org.apache.spark.api.java.function.PairFlatMapFunction;
-import scala.Tuple2;
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.function.Function;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
-
-public class DownwardThread implements PairFlatMapFunction<Tuple2<Long, Piece[]>, Long, Piece[]> {
-
-
+public class FindValueThread implements Function<Piece[], Byte> {
     int w;
     int h;
     int win;
-    Piece nextP;
-    int tier;
     Connect4 game;
+    Piece placed;
+    long[][][] savedRearrange;
     long[] offsets;
-    private long[][][] savedRearrange;
-
-    public DownwardThread(int w, int h, int win, Piece nextP, int tier) {
+    int tier;
+    JavaPairRDD<Long, Byte> pastPrimValues;
+    public FindValueThread(int w, int h, int win, Piece placed, int tier, JavaPairRDD<Long, Byte> pastPrimValues) {
         this.w = w;
         this.h = h;
         this.win = win;
-        this.nextP = nextP;
+        this.game = new Connect4(w,h,win);
+        this.placed = placed;
         this.tier = tier;
+        this.pastPrimValues = pastPrimValues;
         savedRearrange = new long[2 + w*h / 2][2 + w*h/2][w*h + 1];
         for (int i = 0; i < 2 + w*h / 2; i++) {
             for (int j = 0; j < 2 + w*h/2; j++) {
@@ -42,16 +42,87 @@ public class DownwardThread implements PairFlatMapFunction<Tuple2<Long, Piece[]>
     }
 
     @Override
-    public Iterator<Tuple2<Long, Piece[]>> call(Tuple2<Long, Piece[]> longTuple2){
-        List<Tuple2<Long, Piece[]>> nextTier = new ArrayList<>();
-        List<Integer> moves = game.generateMoves(longTuple2._2);
-        for (int move: moves) {
-            Piece[] newPosition = game.doMove(longTuple2._2, move, nextP);
-            nextTier.add(new Tuple2<>(calculateLocation(newPosition, tier),newPosition));
+    public Byte call(Piece[] pieces) {
+        Tuple<Primitive, Integer> p = game.isPrimitive(pieces, placed);
+        if (p.x != Primitive.NOT_PRIMITIVE) {
+            return byteValue(p);
         }
-        return nextTier.iterator();
+        List<Byte> childrenBytes = new ArrayList<>();
+        List<Integer> moves = game.generateMoves(pieces);
+        for (Integer move: moves) {
+            Long childLong = calculateLocation(game.doMove(pieces, move, placed), tier);
+            childrenBytes.add(pastPrimValues.lookup(childLong).get(0));
+        }
+        int lossRemote = Integer.MAX_VALUE;
+        int tieRemote = -1;
+        int winRemote = -1;
+        for (Byte b: childrenBytes) {
+            Tuple<Primitive, Integer> val = byteToTuple(b);
+            if (val.x == Primitive.LOSS && val.y < lossRemote) {
+                lossRemote = val.y;
+            } else if (val.x == Primitive.TIE  && val.y > tieRemote) {
+                tieRemote = val.y;
+            } else if (val.y > winRemote){
+                winRemote = val.y;
+            }
+        }
+        if (lossRemote != Integer.MAX_VALUE) {
+            Tuple<Primitive, Integer> temp = new Tuple<>(Primitive.WIN, lossRemote + 1);
+            return byteValue(temp);
+        } else if (tieRemote != -1) {
+            Tuple<Primitive, Integer> temp = new Tuple<>(Primitive.TIE, tieRemote + 1);
+            return byteValue(temp);
+        } else {
+            Tuple<Primitive, Integer> temp = new Tuple<>(Primitive.LOSS, winRemote + 1);
+            return byteValue(temp);
+        }
     }
 
+    private Tuple<Primitive, Integer> byteToTuple(Byte b) {
+        int val = Byte.toUnsignedInt(b);
+        int remoteness = (val << 26) >>> 26;
+        Primitive p;
+        switch((val) >>> 6) {
+            case 0:
+                p = Primitive.NOT_PRIMITIVE;
+                break;
+            case 1:
+                p = Primitive.LOSS;
+                break;
+            case 2:
+                p = Primitive.WIN;
+                break;
+            case 3:
+                p = Primitive.TIE;
+                break;
+            default:
+                throw new IllegalStateException("two bits should only have those options");
+        }
+        return new Tuple<>(p, remoteness);
+    }
+
+    private byte byteValue(Tuple<Primitive, Integer> p) {
+        Integer temp;
+        switch (p.x) {
+            case NOT_PRIMITIVE:
+                temp = 0;
+                break;
+            case LOSS:
+                temp = 1;
+                break;
+            case WIN:
+                temp = 2;
+                break;
+            case TIE:
+                temp = 3;
+                break;
+            default:
+                throw new IllegalStateException("shouldn't happen");
+        }
+        temp = temp << 6;
+        temp += p.y;
+        return temp.byteValue();
+    }
 
     private void setOffsets() {
         Piece[] startingPosition = new Piece[w*h];
@@ -166,7 +237,4 @@ public class DownwardThread implements PairFlatMapFunction<Tuple2<Long, Piece[]>
         }
         return Math.min(location, calculateLocationSym(position, numPieces));
     }
-
-
-
 }

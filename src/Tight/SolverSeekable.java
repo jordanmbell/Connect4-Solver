@@ -75,7 +75,7 @@ public class SolverSeekable extends Thread {
         game = new Connect4(width, height, win);
         setOffsets();
         fileName = "connect4_by_" + width + "_by_" + height + "_win_" + win + "_sparse";
-        Path path = Path.of(fileName);
+        Path path = null;//Path.of(fileName);
 
         try {
             channel = Files.newByteChannel(path, EnumSet.of(CREATE_NEW, WRITE, SPARSE, READ));
